@@ -314,7 +314,7 @@ main{container-type:inline-size}
         <div id="nudge"></div>
         <div class="panel review" id="review"></div>
         <div class="panel">
-          <div class="head"><h2>This week</h2><button type="button" class="btn" id="exportBtn">Export log</button></div>
+          <div class="head"><h2>This week</h2><div style="display:flex;gap:8px"><button type="button" class="btn" id="syncBtn">Family sync</button><button type="button" class="btn" id="exportBtn">Export log</button></div></div>
           <div class="week" id="week"></div>
         </div>
         <div class="notice" id="saveNote">Loading your saved checks…</div>
@@ -343,6 +343,7 @@ main{container-type:inline-size}
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle" hidden></div>
 <div class="toast" id="toast" hidden></div>
 
+<script src="config.js"></script>
 <script>
 (function(){
   /* ---------- People & routine ---------- */
@@ -901,6 +902,10 @@ main{container-type:inline-size}
       return;
     }
     if (act === 'export-xlsx' || act === 'export-copy') { runExport(act); return; }
+    if (act === 'sync-create') { const k = newKey(); try { localStorage.setItem('fdb-key', k); } catch(_){} location.hash = 'k=' + k; location.reload(); return; }
+    if (act === 'sync-join') { const m = ($('joinLink').value || '').match(/([A-Za-z0-9]{32,64})\s*$/); if (!m) { toast('That doesn’t look like a family link.'); return; } try { localStorage.setItem('fdb-key', m[1]); } catch(_){} location.hash = 'k=' + m[1]; location.reload(); return; }
+    if (act === 'sync-copy') { const v = $('famLink').value; navigator.clipboard.writeText(v).then(() => toast('Link copied'), () => { $('famLink').select(); toast('Selected. Copy it from the menu.'); }); return; }
+    if (act === 'sync-leave') { if (el.dataset.armed !== '1') { el.dataset.armed = '1'; el.textContent = 'Tap again to stop'; return; } try { localStorage.removeItem('fdb-key'); } catch(_){} history.replaceState(null, '', location.pathname); location.reload(); return; }
     if (act === 'backup') { saveBlob(new Blob([JSON.stringify(backupData(), null, 1)], { type: 'application/json' }), 'day-board-backup-' + key(new Date()) + '.json'); toast('Backup ready. Save it to Files.'); return; }
     if (act === 'open') { openTask(id); return; }
     if (act === 'close-sheet') { closeSheet(); return; }
@@ -1020,6 +1025,39 @@ main{container-type:inline-size}
     };
     rd.readAsText(f);
   });
+  /* ---------- Family sync (Firebase) ---------- */
+  const KEY_RE = /^[A-Za-z0-9]{32,64}$/;
+  function getKey(){
+    const m = (location.hash || '').match(/k=([A-Za-z0-9]{32,64})/) || (location.search || '').match(/k=([A-Za-z0-9]{32,64})/);
+    if (m) { try { localStorage.setItem('fdb-key', m[1]); } catch(e){} return m[1]; }
+    try { const k = localStorage.getItem('fdb-key'); return k && KEY_RE.test(k) ? k : null; } catch(e){ return null; }
+  }
+  function newKey(){ const c = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789', a = new Uint32Array(40); crypto.getRandomValues(a); return Array.from(a, n => c[n % c.length]).join(''); }
+  const familyLink = (k) => location.origin + location.pathname + '#k=' + k;
+  function loadScript(src){ return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
+  async function connectFirebase(){
+    const cfg = window.FAMILY_BOARD_FIREBASE, k = getKey();
+    if (!cfg || !k) return null;
+    await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
+    await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js');
+    if (!firebase.apps.length) firebase.initializeApp(cfg);
+    const fs = firebase.firestore();
+    try { await fs.enablePersistence({ synchronizeTabs: true }); } catch(e){}
+    const base = 'boards/' + k + '/';
+    return { doc: (p) => fs.doc(base + p), collection: (p) => fs.collection(base + p) };
+  }
+  function openSync(){
+    const k = getKey(), on = !!window.FAMILY_BOARD_FIREBASE;
+    if (!on) { openSheet(`<div class="sh"><h3 id="shTitle">Family sync</h3><button type="button" class="btn ghost" data-act="close-sheet">Close</button></div><p style="margin:0">Sync isn’t switched on in this copy of the app yet.</p>`); return; }
+    openSheet(k
+      ? `<div class="sh"><div><h3 id="shTitle">Family sync is on</h3><div class="status">Open this link on every device you want to keep in step, then add it to the Home Screen from there.</div></div><button type="button" class="btn ghost" data-act="close-sheet">Close</button></div>
+         <div class="field"><label for="famLink">Your family link (keep it private, like a password)</label><input id="famLink" readonly value="${esc(familyLink(k))}"></div>
+         <div class="foot"><button type="button" class="btn danger" data-act="sync-leave">Stop syncing this device</button><button type="button" class="btn primary" data-act="sync-copy">Copy link</button></div>`
+      : `<div class="sh"><div><h3 id="shTitle">Family sync</h3><div class="status">Share one board across your iPad, Mac and phones. No sign-in.</div></div><button type="button" class="btn ghost" data-act="close-sheet">Close</button></div>
+         <div class="field"><span class="lab">First device</span><button type="button" class="btn primary" data-act="sync-create">Create our family board</button></div>
+         <div class="field"><label for="joinLink">Already made one on another device? Paste its family link</label><div class="tawrap"><input id="joinLink" placeholder="https://…#k=…"><button type="button" class="btn" data-act="sync-join">Join</button></div></div>`);
+  }
+  $('syncBtn').addEventListener('click', openSync);
   function loadXLSX(){
     if (window.XLSX) return Promise.resolve(window.XLSX);
     return new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = () => res(window.XLSX); s.onerror = rej; document.head.appendChild(s); });
@@ -1115,15 +1153,15 @@ main{container-type:inline-size}
   (async () => { try { downloads = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch(e){ downloads = null; } })();
   (async () => {
     let cap = null;
-    try { cap = window.claude && window.claude.use ? await window.claude.use('db') : null; } catch(e){ cap = null; }
-    if (!cap) { useLocal('Saved on this iPad. Tap Export log → Download backup now and then to keep a copy.'); return; }
+    try { cap = await connectFirebase(); } catch(e){ cap = null; }
+    if (!cap) { useLocal(getKey() && window.FAMILY_BOARD_FIREBASE ? 'Can’t reach Family sync right now. Changes are saved on this device for now.' : 'Saved on this device only. Tap Family sync to share the board across your devices.'); return; }
     db = cap; mode = 'db';
     let gotDays = false;
     const timer = setTimeout(() => { if (!gotDays) $('saveNote').textContent = 'Can’t reach your saved checks yet. Anything you tick now will save once the connection is back.'; }, 10000);
     db.collection('days').onSnapshot(snap => {
       snap.docs.forEach(d => { const k = d.id; if (!pending[k] && !writing[k]) days[k] = Object.assign({ checks:{}, notes:{}, skipped:{}, extras:[], dayNote:'', closed:false }, d.data()); });
       snap.docChanges().forEach(ch => { if (ch.type === 'removed' && !pending[ch.doc.id]) delete days[ch.doc.id]; });
-      if (!snap.metadata.fromCache) { const first = !gotDays; gotDays = true; clearTimeout(timer); $('saveNote').textContent = 'Saved to your Claude account. Ticks and comments show up wherever you open this board.'; if (first) mergeLocal(); }
+      if (!snap.metadata.fromCache) { const first = !gotDays; gotDays = true; clearTimeout(timer); $('saveNote').textContent = 'Family sync is on. Changes show up on every device that opened your family link.'; if (first) mergeLocal(); }
       if ($('sheet').hidden && !(document.activeElement && document.activeElement.tagName === 'TEXTAREA')) render();
     }, err => { clearTimeout(timer); $('saveNote').textContent = 'Saving is unavailable right now. Changes stay on screen until you leave the page.'; });
     db.collection('health').onSnapshot(snap => {

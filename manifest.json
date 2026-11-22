@@ -1,7 +1,6 @@
 {
  "name": "Family Day Board",
  "short_name": "Day Board",
- "start_url": "./",
  "scope": "./",
  "display": "standalone",
  "orientation": "landscape",
