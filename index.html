@@ -236,6 +236,11 @@ textarea{min-height:64px;resize:vertical}
 .reasons{display:flex;flex-wrap:wrap;gap:6px}
 .reasons button{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:7px 12px;font-weight:700;font-size:13px;min-height:36px;color:var(--ink)}
 .reasons button:active{background:color-mix(in srgb,var(--accent) 14%,var(--surface))}
+/* Sync button in the top bar */
+.syncbtn{height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:8px}
+.syncbtn i{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+.syncbtn.on i{background:var(--good)}
+.syncbtn.wait i{background:var(--mid)}
 /* Sheet */
 .scrim{position:fixed;inset:0;background:color-mix(in srgb,var(--ink) 35%,transparent);z-index:20}
 .sheet{position:fixed;z-index:22;left:50%;top:50%;transform:translate(-50%,-50%);width:min(520px,calc(100% - 32px));max-height:calc(100% - 40px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));overflow-y:auto;background:var(--surface);border-radius:18px;border:1px solid var(--line);padding:20px;display:grid;gap:14px;box-shadow:0 20px 50px color-mix(in srgb,var(--ink) 25%,transparent)}
@@ -291,6 +296,7 @@ main{container-type:inline-size}
       <button type="button" class="icon" id="next" aria-label="Next day"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
     </div>
     <div class="right">
+      <button type="button" class="syncbtn" id="syncBtn" aria-label="Family sync"><i id="syncDot"></i><span id="syncLbl">Sync</span></button>
       <button type="button" class="icon" id="fsBtn" aria-label="Full screen" title="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       <button type="button" class="todaybtn" id="goToday">Today</button>
       <button type="button" class="addbtn" id="addTop" aria-label="Add a task">+ Add</button>
@@ -314,7 +320,7 @@ main{container-type:inline-size}
         <div id="nudge"></div>
         <div class="panel review" id="review"></div>
         <div class="panel">
-          <div class="head"><h2>This week</h2><div style="display:flex;gap:8px"><button type="button" class="btn" id="syncBtn">Family sync</button><button type="button" class="btn" id="exportBtn">Export log</button></div></div>
+          <div class="head"><h2>This week</h2><button type="button" class="btn" id="exportBtn">Export log</button></div>
           <div class="week" id="week"></div>
         </div>
         <div class="notice" id="saveNote">Loading your saved checks…</div>
@@ -1057,6 +1063,8 @@ main{container-type:inline-size}
          <div class="field"><label for="joinLink">Already made one on another device? Paste its family link</label><div class="tawrap"><input id="joinLink" placeholder="https://…#k=…"><button type="button" class="btn" data-act="sync-join">Join</button></div></div>`);
   }
   $('syncBtn').addEventListener('click', openSync);
+  function setSync(state, label){ const b = $('syncBtn'); b.classList.toggle('on', state === 'on'); b.classList.toggle('wait', state === 'wait'); $('syncLbl').textContent = label; }
+  setSync(getKey() && window.FAMILY_BOARD_FIREBASE ? 'wait' : 'off', getKey() && window.FAMILY_BOARD_FIREBASE ? 'Syncing…' : 'Sync');
   function loadXLSX(){
     if (window.XLSX) return Promise.resolve(window.XLSX);
     return new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = () => res(window.XLSX); s.onerror = rej; document.head.appendChild(s); });
@@ -1160,7 +1168,7 @@ main{container-type:inline-size}
     db.collection('days').onSnapshot(snap => {
       snap.docs.forEach(d => { const k = d.id; if (!pending[k] && !writing[k]) days[k] = Object.assign({ checks:{}, notes:{}, skipped:{}, extras:[], dayNote:'', closed:false }, d.data()); });
       snap.docChanges().forEach(ch => { if (ch.type === 'removed' && !pending[ch.doc.id]) delete days[ch.doc.id]; });
-      if (!snap.metadata.fromCache) { const first = !gotDays; gotDays = true; clearTimeout(timer); $('saveNote').textContent = 'Family sync is on. Changes show up on every device that opened your family link.'; if (first) mergeLocal(); }
+      if (!snap.metadata.fromCache) { const first = !gotDays; gotDays = true; clearTimeout(timer); $('saveNote').textContent = 'Family sync is on. Changes show up on every device that opened your family link.'; setSync('on', 'Synced'); if (first) mergeLocal(); }
       if ($('sheet').hidden && !(document.activeElement && document.activeElement.tagName === 'TEXTAREA')) render();
     }, err => { clearTimeout(timer); $('saveNote').textContent = 'Saving is unavailable right now. Changes stay on screen until you leave the page.'; });
     db.collection('health').onSnapshot(snap => {
