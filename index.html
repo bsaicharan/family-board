@@ -1042,7 +1042,6 @@ main{container-type:inline-size}
     await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js');
     if (!firebase.apps.length) firebase.initializeApp(cfg);
     const fs = firebase.firestore();
-    try { await fs.enablePersistence({ synchronizeTabs: true }); } catch(e){}
     const base = 'boards/' + k + '/';
     return { doc: (p) => fs.doc(base + p), collection: (p) => fs.collection(base + p) };
   }
